@@ -35,12 +35,16 @@
       <input id="day" class="form-control" type="number" placeholder="원하시는 관람일 (예시 :4월 28일의 경우 28 입력)" required="required"/>
     </div>
     <div class="mb-3">
-      <label for="userId">User ID</label>
-      <input id="userId" class="form-control" type="text" placeholder="User ID" required="required"/>
+      <label for="idToken">id_token</label>
+      <input id="idToken" class="form-control" type="text" placeholder="id_token 쿠키 값" required="required"/>
     </div>
     <div class="mb-3">
-      <label for="password">Password</label>
-      <input id="password" class="form-control" type="password" placeholder="Password" required="required"/>
+      <label for="tempCookie">tempinterparkGUEST</label>
+      <input id="tempCookie" class="form-control" type="text" placeholder="tempinterparkGUEST 쿠키 값" required="required"/>
+    </div>
+    <div class="mb-3">
+      <label for="seatArea">Seat Area</label>
+      <input id="seatArea" class="form-control" type="text" placeholder="원하는 좌석 구역 (예시: 외야지정석, 1루 1층 내야지정석A)" required="required"/>
     </div>
     <br>
     <button id="ticketing" onclick="start()" class="btn btn-primary btn-block btn-large">
@@ -57,10 +61,11 @@
       const consertId = document.getElementById('consertId').value;
       const numberPerson = document.getElementById('numberPerson').value;
       const day = document.getElementById('day').value;
-      const userId = document.getElementById('userId').value;
-      const pw = document.getElementById('password').value;
-      
-      startTicketing(consertId, numberPerson, day, userId, pw);
+      const idToken = document.getElementById('idToken').value;
+      const tempCookie = document.getElementById('tempCookie').value;
+      const seatArea = document.getElementById('seatArea').value;
+
+      startTicketing(consertId, numberPerson, day, idToken, tempCookie, seatArea);
     }
   </script>
 </body>

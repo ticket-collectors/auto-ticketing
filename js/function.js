@@ -1,45 +1,43 @@
 const puppeteer = require('puppeteer');
 const log = require('./js/log.js');
 
-async function startTicketing(consertId, numberPerson, day, userId, pw) {
+async function startTicketing(consertId, numberPerson, day, idToken, tempCookie, seatArea) {
     const browser = await puppeteer.launch({
         headless: false,
         args: ['--disable-web-security', '--disable-features=IsolateOrigins', ' --disable-site-isolation-trials']
     });
 
     let page = await browser.newPage();
-    await page.goto('https://ticket.interpark.com/Gate/TPLogin.asp');
-    
     await page.setViewport({width: 1080, height: 1024});
 
-    await page.waitForSelector('iframe');
-    const id = await page.$(
-        'iframe[src="https://accounts.interpark.com/authorize/ticket-pc?origin=https%3A%2F%2Fticket%2Einterpark%2Ecom%2FGate%2FTPLoginConfirmGate%2Easp%3FGroupCode%3D%26Tiki%3D%26Point%3D%26PlayDate%3D%26PlaySeq%3D%26HeartYN%3D%26TikiAutoPop%3D%26BookingBizCode%3D%26MemBizCD%3DWEBBR%26CPage%3D%26GPage%3Dhttp%253A%252F%252Fticket%252Einterpark%252Ecom%252F&postProc=IFRAME"]',
-    );
-
-    // 로그인
-    const idSelector = '#userId';
-    const idInput = userId;
-    const pwSelector = '#userPwd';
-    const pwInput = pw;
-
-    let frame = await id.contentFrame();
-    await frame.type(idSelector, idInput);
-    await frame.type(pwSelector, pwInput);
-    page.keyboard.press('Enter');
-    await log.addLog("로그인 성공");
-    
-    await page.waitForSelector('#DivMainPopup');
-
-    // save cookie
-    const cookies = await page.cookies();
-
-    // load cookie
-    await page.setCookie(...cookies);
-
-    // consert
+    // 콘서트 페이지로 먼저 이동
     let consertUrl = 'https://tickets.interpark.com/special/sports/promotion/' + consertId;
     await page.goto(consertUrl);
+
+    // 쿠키 설정
+    await page.setCookie(
+        {
+            name: 'id_token',
+            value: idToken,
+            domain: '.interpark.com',
+            path: '/',
+            httpOnly: false,
+            secure: true
+        },
+        {
+            name: 'tempinterparkGUEST',
+            value: tempCookie,
+            domain: '.interpark.com',
+            path: '/',
+            httpOnly: false,
+            secure: false
+        }
+    );
+    await log.addLog("쿠키 설정 완료");
+
+    // 쿠키 적용을 위해 페이지 새로고침
+    await page.reload();
+    await log.addLog("페이지 새로고침 완료");
     
     // if exsited popup -> close
     const popupCloseBut = '#popup-prdGuide > div > div.popupFooter > button'
@@ -54,17 +52,40 @@ async function startTicketing(consertId, numberPerson, day, userId, pw) {
     // await new Promise(r => setTimeout(r, startTime.getTime() - now.getTime()));
     // page.reload();
 
-    const ticketSelector = '.stickyWrap';
-    await page.waitForSelector(ticketSelector);
-    
-    // 날짜
-    let mutedDayLength = (await page.$$('.muted')).length;
-    let dayCalculate = mutedDayLength + Number(day);
-    
-    const daySelector = '#productSide > div > div.sideMain > div.sideContainer.containerTop.sideToggleWrap > div.sideContent.toggleCalendar > div > div > div > div > ul:nth-child(3) > li:nth-child(' + `${dayCalculate}` + ')';
-    await page.waitForSelector(daySelector);
-    page.click(daySelector);
-    await log.addLog("공연 관람일 클릭");
+    // 경기 목록이 로드될 때까지 대기
+    await page.waitForSelector('.tournament-list_wrap__ldlRV');
+    await log.addLog("경기 목록 로드 완료");
+
+    // 날짜 기반으로 예매하기 버튼 찾기
+    const currentMonth = new Date().getMonth() + 1; // 1-12
+    const targetDate = `${currentMonth}.${day}`; // "10.24" 형식
+    await log.addLog(`${targetDate} 날짜의 예매하기 버튼 검색 중...`);
+
+    // 모든 경기 항목 가져오기
+    const tournamentItems = await page.$$('.tournament-item_wrap__ytvfE');
+
+    let foundButton = null;
+    for (const item of tournamentItems) {
+        const dateElement = await item.$('.tournament-item_date_time__PCNaF');
+        if (dateElement) {
+            const dateText = await page.evaluate(el => el.textContent, dateElement);
+
+            // 날짜가 일치하는지 확인 (예: "10.24(금) 18:30"에서 "10.24" 포함 여부)
+            if (dateText.includes(targetDate)) {
+                // 해당 항목의 예매하기 버튼 찾기
+                foundButton = await item.$('button.flat-button_btn__nLKZo.flat-button_bg__XOZdR');
+                if (foundButton) {
+                    await log.addLog(`${targetDate} 날짜 경기 찾음: ${dateText}`);
+                    break;
+                }
+            }
+        }
+    }
+
+    if (!foundButton) {
+        await log.addErrorLog(`${targetDate} 날짜의 예매하기 버튼을 찾을 수 없습니다`);
+        return false;
+    }
 
     // 예매하기
     // TODO : 티켓 오픈 예정 시간 입력 받아서 처리하는 로직
@@ -73,8 +94,7 @@ async function startTicketing(consertId, numberPerson, day, userId, pw) {
     // await new Promise(r => setTimeout(r, startTime.getTime() - now.getTime()));
     // await log.addLog("end wait");
 
-    const buttonSelector = '#productSide > div > div.sideBtnWrap > a.sideBtn.is-primary';
-    page.click(buttonSelector);
+    await foundButton.click();
     const newPagePromise = await new Promise(x => page.once('popup', x));
     await log.addLog("예매하기 버튼 클릭 성공");
     await page.setViewport({width: 1080, height: 1024});
@@ -85,8 +105,8 @@ async function startTicketing(consertId, numberPerson, day, userId, pw) {
     let iframeWindow = await page.$(
         'iframe[id="ifrmSeat"]'
     );
-    
-    frame = await iframeWindow.contentFrame();
+
+    let frame = await iframeWindow.contentFrame();
 
     // 잠깐 접어두기 클릭
     await Promise.all([
@@ -94,20 +114,56 @@ async function startTicketing(consertId, numberPerson, day, userId, pw) {
         await frame.click('#divCaptchaFolding > a'),
     ]);
 
-    // 좌석 선택
+    // 좌석 선택 iframe으로 진입
     await frame.waitForSelector('#ifrmSeatDetail');
     iframeWindow = await frame.$(
         'iframe[id="ifrmSeatDetail"]'
     );
-    let datailFrame = await iframeWindow.contentFrame();
-    
-    // 직접 구역 누르고
-    // GetBlockSeatList('', '', '016');
-    // #TmgsTable > tbody > tr > td > map > area:nth-child(16)
+    let detailFrame = await iframeWindow.contentFrame();
+
+    // 구역 선택 - groundList에서 원하는 구역 찾기
+    await detailFrame.waitForSelector('.groundList .list');
+    await log.addLog(`"${seatArea}" 구역 검색 중...`);
+
+    // 모든 구역 링크 가져오기
+    const areaLinks = await detailFrame.$$('.groundList .list a');
+    let foundArea = null;
+
+    for (const link of areaLinks) {
+        const areaName = await detailFrame.evaluate(el => el.getAttribute('sgn'), link);
+
+        if (areaName && areaName.includes(seatArea)) {
+            foundArea = link;
+            await log.addLog(`구역 찾음: ${areaName}`);
+            break;
+        }
+    }
+
+    if (!foundArea) {
+        await log.addErrorLog(`"${seatArea}" 구역을 찾을 수 없습니다`);
+        return false;
+    }
+
+    // 구역 클릭
+    await foundArea.click();
+    await log.addLog("구역 선택 완료");
+
+    // "좌석선택" 버튼 클릭 (중요!)
+    await detailFrame.waitForSelector('.twoBtn');
+    const seatSelectButton = await detailFrame.$('a[onclick*="KBOGate.SetSeat"]');
+
+    if (seatSelectButton) {
+        await seatSelectButton.click();
+        await log.addLog("'좌석선택' 버튼 클릭");
+    } else {
+        await log.addErrorLog("'좌석선택' 버튼을 찾을 수 없습니다");
+        return false;
+    }
 
     // #divSeatBox 나오면 자동으로 좌석 클릭
-    await datailFrame.waitForSelector('#divSeatBox');
-    const seatArr = await datailFrame.$$('span[class="SeatN"]');
+    await detailFrame.waitForSelector('#divSeatBox');
+    await log.addLog("좌석 목록 로드 완료");
+    const seatArr = await detailFrame.$$('span[class="SeatN"]');
     
     for (let index = 0; index < numberPerson; index++) {
         if(index+1 > seatArr.length) {
@@ -122,7 +178,7 @@ async function startTicketing(consertId, numberPerson, day, userId, pw) {
     await frame.click('body > form:nth-child(2) > div > div.contWrap > div.seatR > div > div.btnWrap > a');
     await log.addLog("좌석 선택 완료");
 
-    sleep(50000);
+    await sleep(50000);
 
     // 사용자가 수기로 문자열 입력
 
