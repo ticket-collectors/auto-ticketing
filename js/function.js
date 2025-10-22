@@ -38,7 +38,7 @@ async function startTicketing(consertId, numberPerson, day, userId, pw) {
     await page.setCookie(...cookies);
 
     // consert
-    let consertUrl = 'https://tickets.interpark.com/goods/' + consertId;
+    let consertUrl = 'https://tickets.interpark.com/special/sports/promotion/' + consertId;
     await page.goto(consertUrl);
     
     // if exsited popup -> close
