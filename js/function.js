@@ -1,7 +1,7 @@
 const puppeteer = require('puppeteer');
 const log = require('./js/log.js');
 
-async function startTicketing(consertId, numberPerson, day, idToken, tempCookie, seatArea) {
+async function startTicketing(consertId, numberPerson, monthDay, idToken, tempCookie, seatArea, targetDateTime) {
     const browser = await puppeteer.launch({
         headless: false,
         args: ['--disable-web-security', '--disable-features=IsolateOrigins', ' --disable-site-isolation-trials']
@@ -46,20 +46,37 @@ async function startTicketing(consertId, numberPerson, day, idToken, tempCookie,
         await page.click(popupCloseBut);
     }
 
-    // 예매 오픈 시간까지 기다리기
-    // let startTime = new Date(2023, 3, 28, 11, 59, 59);
-    // let now = new Date();
-    // await new Promise(r => setTimeout(r, startTime.getTime() - now.getTime()));
-    // page.reload();
+    // 예매 오픈 시간까지 기다리기 (대한민국 시간 기준)
+    if (targetDateTime) {
+        const targetTime = new Date(targetDateTime);
+        const now = new Date();
+        
+        // 한국 시간대 설정 (UTC+9)
+        const koreaOffset = 9 * 60; // 9시간을 분으로 변환
+        const koreaTime = new Date(now.getTime() + (koreaOffset * 60 * 1000));
+        
+        const waitTime = targetTime.getTime() - koreaTime.getTime();
+        
+        if (waitTime > 0) {
+            await log.addLog(`예매 오픈 시간까지 대기 중... (${Math.floor(waitTime / 1000)}초 남음)`);
+            await new Promise(r => setTimeout(r, waitTime));
+            await log.addLog("예매 오픈 시간 도달! 페이지 새로고침 중...");
+            await page.reload();
+        } else {
+            await log.addLog("예매 오픈 시간이 이미 지났습니다. 바로 진행합니다.");
+        }
+    }
 
     // 경기 목록이 로드될 때까지 대기
     await page.waitForSelector('.tournament-list_wrap__ldlRV');
     await log.addLog("경기 목록 로드 완료");
 
     // 날짜 기반으로 예매하기 버튼 찾기
-    const currentMonth = new Date().getMonth() + 1; // 1-12
-    const targetDate = `${currentMonth}.${day}`; // "10.24" 형식
-    await log.addLog(`${targetDate} 날짜의 예매하기 버튼 검색 중...`);
+    // monthDay: 1002(10월2일), 1102(11월2일), 1115(11월15일) 형식
+    const month = Math.floor(monthDay / 100); // 앞 두자리 (월)
+    const day = monthDay % 100; // 뒤 두자리 (일)
+    const targetDate = `${month}.${day.toString().padStart(2, '0')}`; // "10.02", "11.02", "11.15" 형식
+    await log.addLog(`${month}월 ${day}일 (${targetDate}) 날짜의 예매하기 버튼 검색 중...`);
 
     // 모든 경기 항목 가져오기
     const tournamentItems = await page.$$('.tournament-item_wrap__ytvfE');
@@ -87,12 +104,84 @@ async function startTicketing(consertId, numberPerson, day, idToken, tempCookie,
         return false;
     }
 
-    // 예매하기
-    // TODO : 티켓 오픈 예정 시간 입력 받아서 처리하는 로직
-    // let startTime = new Date(2023, 3, 28, 11, 59, 59);
-    // let now = new Date();
-    // await new Promise(r => setTimeout(r, startTime.getTime() - now.getTime()));
-    // await log.addLog("end wait");
+    // 예매하기 버튼 상태 확인 및 타이머 설정
+    const buttonText = await page.evaluate(el => el.textContent, foundButton);
+    await log.addLog(`예매하기 버튼 상태: "${buttonText}"`);
+    
+    // 버튼이 비활성화되어 있거나 "예매오픈예정" 등의 텍스트가 있는 경우 타이머 대기
+    if (buttonText.includes('예매오픈예정') || buttonText.includes('오픈예정') || 
+        buttonText.includes('예매준비중') || foundButton.disabled) {
+        
+        if (targetDateTime) {
+            await log.addLog("예매가 아직 오픈되지 않았습니다. 지정된 시간까지 대기합니다...");
+            
+            const targetTime = new Date(targetDateTime);
+            const now = new Date();
+            
+            // 한국 시간대 설정 (UTC+9)
+            const koreaOffset = 9 * 60; // 9시간을 분으로 변환
+            const koreaTime = new Date(now.getTime() + (koreaOffset * 60 * 1000));
+            
+            const waitTime = targetTime.getTime() - koreaTime.getTime();
+            
+            if (waitTime > 1000) { // 1초 이상 남았을 때만 대기
+                const refreshTime = waitTime - 1000; // 1초 전에 새로고침
+                await log.addLog(`예매 오픈 시간까지 대기 중... (${Math.floor(waitTime / 1000)}초 남음, ${Math.floor(refreshTime / 1000)}초 후 새로고침)`);
+                
+                // 카운트다운 표시 (매 10초마다)
+                const countdownInterval = setInterval(async () => {
+                    const remainingTime = Math.floor((targetTime.getTime() - (new Date().getTime() + (koreaOffset * 60 * 1000))) / 1000);
+                    if (remainingTime > 1) {
+                        await log.addLog(`남은 시간: ${remainingTime}초 (${remainingTime - 1}초 후 새로고침)`);
+                    } else {
+                        clearInterval(countdownInterval);
+                    }
+                }, 10000);
+                
+                // 1초 전에 새로고침
+                await new Promise(r => setTimeout(r, refreshTime));
+                clearInterval(countdownInterval);
+                
+                await log.addLog("예매 오픈 1초 전! 페이지 새로고침 중...");
+                await page.reload();
+                
+                // 새로고침 후 1초 대기 (정확한 시간까지)
+                await new Promise(r => setTimeout(r, 1000));
+                await log.addLog("예매 오픈 시간 도달!");
+                
+                // 새로고침 후 다시 예매하기 버튼 찾기
+                await page.waitForSelector('.tournament-list_wrap__ldlRV');
+                const tournamentItems = await page.$$('.tournament-item_wrap__ytvfE');
+                
+                let newFoundButton = null;
+                for (const item of tournamentItems) {
+                    const dateElement = await item.$('.tournament-item_date_time__PCNaF');
+                    if (dateElement) {
+                        const dateText = await page.evaluate(el => el.textContent, dateElement);
+                        if (dateText.includes(targetDate)) {
+                            newFoundButton = await item.$('button.flat-button_btn__nLKZo.flat-button_bg__XOZdR');
+                            if (newFoundButton) {
+                                await log.addLog(`${targetDate} 날짜 경기 재검색 완료`);
+                                break;
+                            }
+                        }
+                    }
+                }
+                
+                if (newFoundButton) {
+                    foundButton = newFoundButton;
+                } else {
+                    await log.addErrorLog(`새로고침 후 ${targetDate} 날짜의 예매하기 버튼을 찾을 수 없습니다`);
+                    return false;
+                }
+            } else {
+                await log.addLog("예매 오픈 시간이 이미 지났거나 1초 이내입니다. 바로 진행합니다.");
+            }
+        } else {
+            await log.addErrorLog("예매가 아직 오픈되지 않았지만 타겟 시간이 설정되지 않았습니다.");
+            return false;
+        }
+    }
 
     await foundButton.click();
     const newPagePromise = await new Promise(x => page.once('popup', x));

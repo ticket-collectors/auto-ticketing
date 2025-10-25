@@ -14,7 +14,7 @@
   "author": "",
   "license": "ISC",
   "devDependencies": {
-    "electron": "^24.1.2",
+    "electron": "^24.8.8",
     "electron-builder": "^24.3.0"
   },
   "dependencies": {
@@ -30,33 +30,33 @@
     "appId": "net.jetalab.ex.auto_ticketing",
     "asar": true,
     "mac": {
-        "target": [
-            "default"
-        ]
+      "target": [
+        "default"
+      ]
     },
     "dmg": {
-        "title": "Auto-Ticketing"
+      "title": "Auto-Ticketing"
     },
     "win": {
-        "target": [
-            {
-                "target": "nsis",
-                "arch": [
-                    "x64",
-                    "ia32"
-                ]
-            }
-        ]
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64",
+            "ia32"
+          ]
+        }
+      ]
     },
     "nsis": {
-        "oneClick": false,
-        "allowToChangeInstallationDirectory": false,
-        "createDesktopShortcut": true
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": false,
+      "createDesktopShortcut": true
     },
     "directories": {
-        "buildResources": "./resources/installer/",
-        "output": "./dist/",
-        "app": "."
+      "buildResources": "./resources/installer/",
+      "output": "./dist/",
+      "app": "."
     }
   }
 }
